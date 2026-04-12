@@ -104,32 +104,80 @@ app.post('/api/build', async (req, res) => {
   try {
     const { resumeText, jobTitle, improvements } = req.body;
 
-    const prompt = `You are an expert resume writer. Based on the following resume content and target job title, create an improved version.
+    const prompt = `
+You are an expert resume writer.
+
+IMPORTANT RULES:
+- Return ONLY valid JSON
+- Do NOT include markdown (no \`\`\`)
+- Do NOT include headings or extra text
+- Ensure JSON is perfectly parseable
+
+STRICT FORMAT:
+{
+  "improved_resume": "string",
+  "changes_explanation": "string",
+  "added_keywords": ["string", "string"]
+}
 
 Target Job: ${jobTitle || 'General'}
+
 Current Resume:
 ${resumeText}
 
-Improvements requested: ${improvements || 'General improvements'}
-
-IMPORTANT: Respond ONLY with valid JSON in this exact format, no other text:
-{"improved_resume": "the improved resume text", "changes_explanation": "explanation of key changes made", "added_keywords": ["keyword1", "keyword2"]}`;
+Improvements requested:
+${improvements || 'General improvements'}
+`;
 
     const response = await generateWithOpenRouter(prompt);
 
     let parsedResult;
+
     try {
       if (!response) {
         throw new Error('Empty response from API');
       }
+
+      // 🔥 Extract JSON safely
       const jsonMatch = response.match(/\{[\s\S]*\}/);
-      parsedResult = jsonMatch ? JSON.parse(jsonMatch[0]) : { raw_response: response };
+
+      if (!jsonMatch) {
+        throw new Error('No JSON found in response');
+      }
+
+      let cleanJson = jsonMatch[0];
+
+      // 🔥 Clean common AI issues
+      cleanJson = cleanJson
+        .replace(/```json/g, '')
+        .replace(/```/g, '')
+        .replace(/,\s*}/g, '}')     // trailing commas
+        .replace(/,\s*]/g, ']')     // trailing commas in arrays
+        .replace(/[\n\r]/g, ' ')    // remove line breaks
+        .trim();
+
+      parsedResult = JSON.parse(cleanJson);
+
+      // 🔥 Ensure structure always exists
+      parsedResult = {
+        improved_resume: parsedResult.improved_resume || '',
+        changes_explanation: parsedResult.changes_explanation || '',
+        added_keywords: parsedResult.added_keywords || []
+      };
+
     } catch (e) {
       console.error('Parse error:', e, 'Response was:', response);
-      parsedResult = { raw_response: response || 'No response received' };
+
+      // 🔥 Safe fallback (never break frontend)
+      parsedResult = {
+        improved_resume: response || 'No response generated',
+        changes_explanation: 'Could not parse structured response',
+        added_keywords: []
+      };
     }
 
     res.json(parsedResult);
+
   } catch (error) {
     console.error('Build error:', error);
     res.status(500).json({ error: 'Failed to build resume' });

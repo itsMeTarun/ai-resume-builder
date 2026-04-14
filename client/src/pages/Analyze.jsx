@@ -29,8 +29,14 @@ export default function Analyze() {
         body: formData
       })
       const text = await response.text()
-      if (!text) throw new Error('Empty response from server')
-      const data = JSON.parse(text)
+      if (!text || text.trim() === '') throw new Error('Empty response from server')
+
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch (e) {
+        throw new Error('Invalid JSON response from server')
+      }
 
       if (!response.ok) throw new Error(data.error || 'Failed to analyze')
 

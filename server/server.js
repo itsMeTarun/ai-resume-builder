@@ -29,46 +29,69 @@ function extractAndCleanJSON(response) {
     return JSON.parse(cleanJson);
   } catch (err) {
     console.error("❌ JSON CLEAN ERROR:", err);
+    console.error("❌ Original response:", response);
     return null;
   }
 }
 
 // OpenRouter API helper
 async function generateWithOpenRouter(prompt) {
-  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
-      'HTTP-Referer': 'http://localhost:5000',
-      'X-Title': 'AI Resume Builder'
-    },
-    body: JSON.stringify({
-      model: 'meta-llama/llama-3-8b-instruct',
-      messages: [{ role: 'user', content: prompt }],
-      temperature: 0.7
-    })
-  });
-  const data = await response.json();
-  console.log('OpenRouter response:', JSON.stringify(data, null, 2));
-  if (!response.ok) {
-    throw new Error(data.error?.message || 'OpenRouter API error');
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      signal: controller.signal,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+        'HTTP-Referer': 'http://localhost:5000',
+        'X-Title': 'AI Resume Builder'
+      },
+      body: JSON.stringify({
+        model: 'meta-llama/llama-3-8b-instruct',
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.7
+      })
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      console.error('OpenRouter API error:', response.status, errorData);
+      throw new Error(errorData.error?.message || `OpenRouter API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    console.log('OpenRouter response received');
+
+    if (!data.choices || !data.choices[0]?.message?.content) {
+      console.error('Invalid response structure from OpenRouter:', data);
+      throw new Error('Invalid response structure from OpenRouter');
+    }
+
+    return data.choices[0].message.content;
+  } catch (error) {
+    console.error('OpenRouter fetch error:', error);
+    throw error;
   }
-  if (!data.choices || !data.choices[0]?.message?.content) {
-    throw new Error('Invalid response structure from OpenRouter');
-  }
-  return data.choices[0].message.content;
 }
 
 // Analyze Resume Endpoint
 app.post('/api/analyze', upload.single('resume'), async (req, res) => {
   try {
+    console.log('Analyze endpoint called');
+
     if (!req.file) {
+      console.log('No file uploaded');
       return res.status(400).json({ error: 'No file uploaded' });
     }
 
     const filePath = req.file.path;
     const fileExt = path.extname(req.file.originalname).toLowerCase();
+    console.log(`File uploaded: ${req.file.originalname}, type: ${fileExt}`);
 
     let resumeText = '';
 
@@ -100,16 +123,14 @@ app.post('/api/analyze', upload.single('resume'), async (req, res) => {
     ${resumeText}`;
 
     const response = await generateWithOpenRouter(prompt);
+    console.log('AI response received, length:', response?.length || 0);
 
     // Clean up uploaded file
     fs.unlinkSync(filePath);
 
-    // Parse the JSON response
-    let analysis;
-    try {
-      const jsonMatch = response.match(/\{[\s\S]*\}/);
-      analysis = jsonMatch ? JSON.parse(jsonMatch[0]) : { raw_analysis: response };
-    } catch (e) {
+    // Parse the JSON response using the cleaner function
+    let analysis = extractAndCleanJSON(response);
+    if (!analysis) {
       analysis = { raw_analysis: response };
     }
 
@@ -325,5 +346,7 @@ Company: ${companyName || 'the company'}
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
+  console.log(`🚀 Server running on http://localhost:${PORT}`);
+  console.log(`🔑 OpenRouter API key: ${process.env.OPENROUTER_API_KEY ? '✓ Present' : '✗ Missing'}`);
+  console.log(`📁 Upload directory: ${__dirname}/uploads`);
 });

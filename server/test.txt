@@ -1,0 +1,4 @@
+John Doe
+Software Developer
+5 years experience in JavaScript and React
+Skills: JavaScript, React, Node.js, Python

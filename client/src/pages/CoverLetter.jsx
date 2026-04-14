@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { Mail, Copy, CheckCircle, AlertCircle, ArrowLeft, FileText, FileDown, Download } from 'lucide-react'
 
@@ -10,6 +10,40 @@ export default function CoverLetter() {
   const [results, setResults] = useState(null)
   const [error, setError] = useState('')
   const [copied, setCopied] = useState(false)
+
+  useEffect(() => {
+    // Set default values for testing
+    setJobTitle('Senior Frontend Engineer')
+    setCompanyName('TechInnovate Inc.')
+    setResumeText(`John Doe
+Email: john.doe@example.com | Phone: (555) 123-4567 | Location: San Francisco, CA
+LinkedIn: linkedin.com/in/johndoe | Portfolio: johndoe.dev
+
+PROFESSIONAL SUMMARY
+Experienced software engineer with 5+ years of experience in full-stack development. Specialized in JavaScript, React, Node.js, and cloud technologies. Passionate about building scalable web applications and mentoring junior developers.
+
+WORK EXPERIENCE
+Senior Software Engineer - TechCorp Inc. (Jan 2022 - Present)
+• Lead development of microservices architecture for enterprise applications
+• Mentored 3 junior developers and conducted code reviews
+• Improved application performance by 40% through optimization techniques
+• Implemented CI/CD pipeline reducing deployment time by 60%
+
+Full Stack Developer - StartUpXYZ (Jun 2020 - Dec 2021)
+• Built React frontend and Node.js backend for SaaS platform
+• Developed RESTful APIs and integrated third-party services
+• Reduced page load time by 60% through performance optimization
+
+EDUCATION
+Master of Science in Computer Science - Stanford University (GPA: 3.9/4.0)
+Bachelor of Science in Software Engineering - University of California (GPA: 3.8/4.0)
+
+SKILLS
+JavaScript, React, Node.js, TypeScript, Python, AWS, Docker, Kubernetes, PostgreSQL, MongoDB, Git, CI/CD
+
+CERTIFICATIONS
+AWS Certified Developer, Google Cloud Professional, React Developer Certification`)
+  }, [])
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -28,13 +62,16 @@ export default function CoverLetter() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ resumeText, jobTitle, companyName })
       })
-      const text = await response.text()
-      if (!text) throw new Error('Empty response from server')
-      const data = JSON.parse(text)
+      const data = await response.json();
+
+      console.log("API RESPONSE:", data); // debug
 
       if (!response.ok) throw new Error(data.error || 'Failed to generate')
 
-      setResults(data)
+      setResults({
+        cover_letter: data?.cover_letter || '',
+        key_points: data?.key_points || []
+      })
     } catch (err) {
       setError(err.message)
     } finally {
@@ -130,7 +167,7 @@ ${keyPoints}
                   type="text"
                   value={jobTitle}
                   onChange={(e) => setJobTitle(e.target.value)}
-                  placeholder="e.g., Product Manager"
+                  placeholder="Senior Frontend Engineer"
                   className="w-full bg-bg-dark border border-border rounded-xl px-4 py-3 text-text-light focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all"
                 />
               </div>
@@ -140,7 +177,7 @@ ${keyPoints}
                   type="text"
                   value={companyName}
                   onChange={(e) => setCompanyName(e.target.value)}
-                  placeholder="e.g., Google"
+                  placeholder="TechInnovate Inc."
                   className="w-full bg-bg-dark border border-border rounded-xl px-4 py-3 text-text-light focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all"
                 />
               </div>
@@ -246,7 +283,11 @@ ${keyPoints}
                 </div>
               </div>
               <div className="p-5 bg-bg-dark/50">
-                <pre className="whitespace-pre-wrap text-text-light leading-relaxed">{results.cover_letter}</pre>
+                <div className="text-text-light leading-relaxed space-y-2">
+                  {results.cover_letter?.split('\n').map((line, i) => (
+                    <p key={i}>{line}</p>
+                  ))}
+                </div>
               </div>
             </div>
 

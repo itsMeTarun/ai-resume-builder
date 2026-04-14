@@ -12,6 +12,27 @@ const upload = multer({ dest: 'uploads/' });
 app.use(cors());
 app.use(express.json());
 
+function extractAndCleanJSON(response) {
+  try {
+    if (!response) throw new Error("Empty response");
+
+    const jsonMatch = response.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error("No JSON found");
+
+    let cleanJson = jsonMatch[0]
+      .replace(/```json/g, '')
+      .replace(/```/g, '')
+      .replace(/,\s*}/g, '}')
+      .replace(/,\s*]/g, ']')
+      .trim();
+
+    return JSON.parse(cleanJson);
+  } catch (err) {
+    console.error("❌ JSON CLEAN ERROR:", err);
+    return null;
+  }
+}
+
 // OpenRouter API helper
 async function generateWithOpenRouter(prompt) {
   const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
@@ -184,38 +205,118 @@ ${improvements || 'General improvements'}
   }
 });
 
+app.post('/api/create-resume', async (req, res) => {
+  try {
+    const formData = req.body;
+
+    const prompt = `
+You are an expert resume writer.
+
+STRICT RULES:
+- ONLY return valid JSON
+- NO markdown
+- NO explanations
+- JSON must start with { and end with }
+
+FORMAT:
+{
+  "resume": {
+    "name": "string",
+    "contact": {
+      "email": "string",
+      "phone": "string",
+      "location": "string",
+      "linkedin": "string",
+      "portfolio": "string"
+    },
+    "summary": "string",
+    "skills": ["string"],
+    "experience": [
+      {
+        "company": "string",
+        "position": "string",
+        "duration": "string",
+        "description": ["string"]
+      }
+    ],
+    "education": [
+      {
+        "school": "string",
+        "degree": "string",
+        "year": "string"
+      }
+    ],
+    "certifications": ["string"]
+  },
+  "cover_letter": "string"
+}
+
+USER DATA:
+${JSON.stringify(formData)}
+`;
+
+    const raw = await generateWithOpenRouter(prompt);
+
+    const parsed = extractAndCleanJSON(raw);
+
+    if (!parsed) {
+      return res.status(500).json({
+        error: "AI parsing failed",
+        raw
+      });
+    }
+
+    res.json(parsed);
+
+  } catch (error) {
+    console.error('Create resume error:', error);
+    res.status(500).json({ error: 'Failed to create resume' });
+  }
+});
+
 // Generate Cover Letter Endpoint
 app.post('/api/cover-letter', async (req, res) => {
   try {
     const { resumeText, jobTitle, companyName } = req.body;
 
-    const prompt = `You are an expert cover letter writer. Write a professional cover letter based on:
+    const prompt = `
+You are an expert cover letter writer.
 
-    Resume: ${resumeText}
-    Target Job: ${jobTitle}
-    Company: ${companyName || 'the company'}
+STRICT RULES:
+- Return ONLY valid JSON
+- No markdown
+- No explanation
+- JSON must start with { and end with }
 
-    Provide in JSON format:
-    {
-      "cover_letter": "the full cover letter",
-      "key_points": ["key points highlighted"]
-    }`;
+FORMAT:
+{
+  "cover_letter": "string",
+  "key_points": ["string"]
+}
 
-    const response = await generateWithOpenRouter(prompt);
+Resume: ${resumeText}
+Job: ${jobTitle}
+Company: ${companyName || 'the company'}
+`;
 
-    let parsedResult;
-    try {
-      if (!response) {
-        throw new Error('Empty response from API');
-      }
-      const jsonMatch = response.match(/\{[\s\S]*\}/);
-      parsedResult = jsonMatch ? JSON.parse(jsonMatch[0]) : { raw_response: response };
-    } catch (e) {
-      console.error('Parse error:', e, 'Response was:', response);
-      parsedResult = { raw_response: response || 'No response received' };
+    const raw = await generateWithOpenRouter(prompt);
+
+    // ✅ USE YOUR CLEANER (BEST FIX)
+    const parsed = extractAndCleanJSON(raw);
+
+    if (!parsed) {
+      return res.status(500).json({
+        error: "Parsing failed",
+        raw
+      });
     }
 
-    res.json(parsedResult);
+    // ✅ ALWAYS RETURN SAFE STRUCTURE
+    res.json({
+      cover_letter: parsed.cover_letter || '',
+      key_points: parsed.key_points || []
+    });
+
   } catch (error) {
     console.error('Cover letter error:', error);
     res.status(500).json({ error: 'Failed to generate cover letter' });
